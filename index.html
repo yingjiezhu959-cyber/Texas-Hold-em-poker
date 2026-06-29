@@ -97,6 +97,7 @@
     button.danger { color: #fff; background: linear-gradient(135deg, #d8423c, #9b2420); }
     button:disabled { cursor: not-allowed; opacity: .45; }
     .grid2, .raise-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .raise-row { margin-top: -2px; }
     .status { min-height: 58px; margin: 14px 0; padding: 14px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 16px; background: rgba(255, 255, 255, .07); font-weight: 800; line-height: 1.45; }
     .status.small { min-height: auto; color: var(--muted); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
     .room-tools { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .12); }
@@ -177,8 +178,8 @@
 
         <div class="actions">
           <button class="danger" id="foldBtn" disabled>弃牌</button>
-          <button id="checkCallBtn" disabled>过牌 / 跟注</button>
           <div class="raise-row"><input id="raiseInput" type="number" min="10" step="5" value="20" /><button id="raiseBtn" disabled>加注</button></div>
+          <button id="checkCallBtn" disabled>过牌 / 跟注</button>
           <button class="secondary" id="allInBtn" disabled>全下</button>
           <button id="nextHandBtn" disabled>下一手</button>
         </div>
@@ -226,6 +227,7 @@
     let pollTimer = null;
     let eventSource = null;
     let actionBusy = false;
+    let pollingBusy = false;
 
     function selectedCount() { return Number(playerCountInput.value) === 3 ? 3 : 2; }
     function getPlayerId() { let id = localStorage.getItem("pokerPlayerId"); if (!id) { id = "p_" + crypto.randomUUID(); localStorage.setItem("pokerPlayerId", id); } return id; }
@@ -279,25 +281,42 @@
         render();
       } catch (err) { showError(err.message); }
     }
-    function stopLiveUpdates() { clearInterval(pollTimer); pollTimer = null; if (eventSource) { eventSource.close(); eventSource = null; } }
-    function startPolling() { clearInterval(pollTimer); pollTimer = setInterval(fetchState, 2500); }
+    function stopLiveUpdates() { clearInterval(pollTimer); pollTimer = null; pollingBusy = false; if (eventSource) { eventSource.close(); eventSource = null; } }
+    function startPolling() {
+      clearInterval(pollTimer);
+      fetchState();
+      pollTimer = setInterval(fetchState, 900);
+    }
     function startLiveUpdates() {
       stopLiveUpdates();
-      if (!window.EventSource) { startPolling(); return; }
+      startPolling();
+      if (!window.EventSource) return;
       const url = `/api/events?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`;
       eventSource = new EventSource(url);
       eventSource.addEventListener("state", event => {
         try { state = JSON.parse(event.data); render(); }
-        catch { startPolling(); }
+        catch { fetchState(); }
       });
       eventSource.onerror = () => {
-        connectionEl.textContent = "实时连接恢复中，已临时降级刷新…";
-        if (!pollTimer) startPolling();
+        connectionEl.textContent = "实时连接恢复中，已自动刷新同步…";
       };
     }
-    async function fetchState() { if (!joined || !currentRoom) return; try { const { data } = await requestJson(`/api/state?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`, { cache: "no-store", headers: tunnelHeaders }, false); state = data; render(); } catch { connectionEl.textContent = "连接中断，重试中…"; } }
+    async function fetchState() {
+      if (!joined || !currentRoom || pollingBusy) return;
+      pollingBusy = true;
+      try {
+        const url = `/api/state?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}&t=${Date.now()}`;
+        const { data } = await requestJson(url, { cache: "no-store", headers: tunnelHeaders }, false);
+        state = data;
+        render();
+      } catch {
+        connectionEl.textContent = "连接中断，重试中…";
+      } finally {
+        pollingBusy = false;
+      }
+    }
     function markActionBusy(busy) { [foldBtn, checkCallBtn, raiseBtn, allInBtn, nextHandBtn].forEach(btn => btn.disabled = busy || btn.disabled); }
-    async function doAction(action, amount = null) { if (!joined) return showError("请先加入房间。"); if (actionBusy) return; actionBusy = true; markActionBusy(true); statusEl.textContent = "操作已发送，等待确认…"; let error = null; try { state = await api("/api/action", { room: currentRoom, playerId: getPlayerId(), action, amount }); } catch (err) { error = err; } finally { actionBusy = false; render(); if (error) showError(error.message); } }
+    async function doAction(action, amount = null) { if (!joined) return showError("请先加入房间。"); if (actionBusy) return; actionBusy = true; markActionBusy(true); statusEl.textContent = "操作已发送，等待确认…"; let error = null; try { state = await api("/api/action", { room: currentRoom, playerId: getPlayerId(), action, amount }); await fetchState(); } catch (err) { error = err; } finally { actionBusy = false; render(); if (error) showError(error.message); } }
     async function applyFunCode() {
       if (!joined) return showError("请先加入房间。");
       const code = funCodeInput.value.trim();
