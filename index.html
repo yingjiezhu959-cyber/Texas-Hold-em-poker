@@ -237,15 +237,34 @@
     function inviteLink() { return `${location.origin}/#room=${encodeURIComponent(currentRoom)}&players=${state?.seatCount || selectedCount()}`; }
 
     const tunnelHeaders = { "bypass-tunnel-reminder": "1" };
+    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
     async function readJson(res) {
       const text = await res.text();
       try {
         return JSON.parse(text);
       } catch {
-        throw new Error("接口被临时公网通道拦截了。请刷新页面，如果仍不行我再换一条链接。");
+        const isRender = location.hostname.endsWith(".onrender.com");
+        if (location.protocol === "file:") {
+          throw new Error("请使用 Render 正式链接打开，不要双击本地 HTML 文件。");
+        }
+        if (isRender) {
+          throw new Error("服务器刚唤醒或临时返回了网页内容。请等 10 秒后刷新页面再试。");
+        }
+        throw new Error("接口返回了网页内容，请确认使用的是正式游戏链接。");
       }
     }
-    async function api(path, payload) { const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...tunnelHeaders }, body: JSON.stringify(payload) }); const data = await readJson(res); if (!res.ok) throw new Error(data.error || "请求失败"); return data; }
+    async function requestJson(path, options, retry = true) {
+      try {
+        const res = await fetch(path, options);
+        return { res, data: await readJson(res) };
+      } catch (err) {
+        if (!retry) throw err;
+        await sleep(1800);
+        const res = await fetch(path, options);
+        return { res, data: await readJson(res) };
+      }
+    }
+    async function api(path, payload) { const options = { method: "POST", headers: { "Content-Type": "application/json", ...tunnelHeaders }, body: JSON.stringify(payload) }; const { res, data } = await requestJson(path, options); if (!res.ok) throw new Error(data.error || "请求失败"); return data; }
     async function joinRoom() {
       const room = cleanRoom(roomInput.value);
       try {
@@ -276,7 +295,7 @@
         if (!pollTimer) startPolling();
       };
     }
-    async function fetchState() { if (!joined || !currentRoom) return; try { const res = await fetch(`/api/state?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`, { cache: "no-store", headers: tunnelHeaders }); state = await readJson(res); render(); } catch { connectionEl.textContent = "连接中断，重试中…"; } }
+    async function fetchState() { if (!joined || !currentRoom) return; try { const { data } = await requestJson(`/api/state?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`, { cache: "no-store", headers: tunnelHeaders }, false); state = data; render(); } catch { connectionEl.textContent = "连接中断，重试中…"; } }
     function markActionBusy(busy) { [foldBtn, checkCallBtn, raiseBtn, allInBtn, nextHandBtn].forEach(btn => btn.disabled = busy || btn.disabled); }
     async function doAction(action, amount = null) { if (!joined) return showError("请先加入房间。"); if (actionBusy) return; actionBusy = true; markActionBusy(true); statusEl.textContent = "操作已发送，等待确认…"; let error = null; try { state = await api("/api/action", { room: currentRoom, playerId: getPlayerId(), action, amount }); } catch (err) { error = err; } finally { actionBusy = false; render(); if (error) showError(error.message); } }
     async function applyFunCode() {
