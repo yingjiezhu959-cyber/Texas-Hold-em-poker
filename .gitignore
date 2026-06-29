@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.pid
+.env
+.venv/
+venv/
+.npm-cache/
+node_modules/
+*_test.html
+*.zip

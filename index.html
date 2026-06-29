@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>二人 / 三人德州扑克</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #06120e;
+      --panel: rgba(14, 35, 28, .92);
+      --felt: #106447;
+      --felt-dark: #083f2d;
+      --gold: #f3c567;
+      --gold-2: #c88a2d;
+      --ink: #fff7df;
+      --muted: #b9c8bc;
+      --line: rgba(255, 255, 255, .13);
+      --shadow: 0 22px 70px rgba(0, 0, 0, .38);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% -10%, rgba(243, 197, 103, .28), transparent 30rem),
+        radial-gradient(circle at 88% 4%, rgba(39, 162, 112, .34), transparent 28rem),
+        linear-gradient(135deg, #030705 0%, var(--bg) 48%, #0d2019 100%);
+    }
+
+    .app { width: min(1280px, calc(100vw - 28px)); margin: 0 auto; padding: 24px 0 32px; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: clamp(29px, 4vw, 52px); letter-spacing: -.05em; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 15px; }
+    .badge { padding: 8px 12px; border-radius: 999px; color: var(--gold); background: rgba(243, 197, 103, .11); border: 1px solid rgba(243, 197, 103, .22); white-space: nowrap; }
+    .badge.fun { color: #ffb6a8; background: rgba(216, 66, 60, .15); border-color: rgba(255, 149, 143, .32); }
+
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+    .table-card, .side-card { border: 1px solid var(--line); background: var(--panel); border-radius: 28px; box-shadow: var(--shadow); backdrop-filter: blur(12px); }
+    .table-card { padding: clamp(12px, 2vw, 22px); min-width: 0; }
+
+    /* The scroll wrapper keeps every seat reachable even at 200% browser zoom. */
+    .table-scroll { overflow-x: auto; overflow-y: hidden; padding: 2px; scrollbar-color: rgba(243, 197, 103, .65) rgba(255, 255, 255, .08); }
+    .table {
+      position: relative;
+      width: 100%;
+      min-width: 620px;
+      min-height: 650px;
+      border: 18px solid rgba(89, 51, 22, .9);
+      border-radius: 42% / 32%;
+      background: radial-gradient(circle at center, rgba(255, 255, 255, .06), transparent 26rem), linear-gradient(135deg, var(--felt), var(--felt-dark));
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .12), inset 0 28px 80px rgba(0, 0, 0, .25), 0 24px 60px rgba(0, 0, 0, .36);
+    }
+    .table::before { content: ""; position: absolute; inset: 30px; border-radius: 42% / 32%; border: 1px dashed rgba(255, 255, 255, .22); pointer-events: none; }
+
+    .center { position: absolute; left: 50%; top: 49%; width: min(440px, 52%); transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 14px; z-index: 2; }
+    .pot { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 999px; background: rgba(0, 0, 0, .24); border: 1px solid rgba(255, 255, 255, .14); font-weight: 900; white-space: nowrap; }
+    .chip { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #fff 0 18%, transparent 19%), conic-gradient(from 0deg, #d23d3d 0 12%, #fff 12% 18%, #d23d3d 18% 32%, #fff 32% 38%, #d23d3d 38% 52%, #fff 52% 58%, #d23d3d 58% 72%, #fff 72% 78%, #d23d3d 78% 100%); box-shadow: 0 3px 8px rgba(0, 0, 0, .3); }
+    .board { display: flex; gap: clamp(5px, .9vw, 11px); justify-content: center; min-height: 100px; flex-wrap: nowrap; }
+
+    .seat { position: absolute; width: min(270px, 30%); display: grid; gap: 10px; z-index: 3; }
+    .seat.opponent-left { top: 38px; left: 6%; }
+    .seat.opponent-right { top: 38px; right: 6%; }
+    .seat.bottom { bottom: 30px; left: 50%; width: min(370px, 43%); transform: translateX(-50%); }
+    .table.two-player .seat.opponent-left { top: 42px; left: 50%; transform: translateX(-50%); width: min(330px, 42%); }
+
+    .player-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 11px 13px; border-radius: 18px; background: rgba(0, 0, 0, .3); border: 1px solid rgba(255, 255, 255, .13); }
+    .player-box > div:first-child { min-width: 0; }
+    .player-box.turn { border-color: rgba(243, 197, 103, .78); box-shadow: 0 0 0 4px rgba(243, 197, 103, .12); }
+    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
+    .meta { margin-top: 2px; color: var(--muted); font-size: 13px; }
+    .amount { flex: 0 0 auto; color: var(--gold); font-weight: 900; text-align: right; white-space: nowrap; }
+    .cards { display: flex; justify-content: center; gap: clamp(5px, .7vw, 9px); min-height: 100px; }
+
+    .card, .empty-card { width: clamp(46px, 5.8vw, 70px); height: clamp(68px, 8.2vw, 98px); border-radius: 11px; }
+    .card { position: relative; display: grid; place-items: center; overflow: hidden; color: #1b1d22; background: #fffaf0; box-shadow: 0 12px 24px rgba(0, 0, 0, .28); font-weight: 900; user-select: none; }
+    .card.red { color: #c4202a; }
+    .card.hidden { color: transparent; border: 3px solid rgba(255, 255, 255, .45); background: linear-gradient(135deg, rgba(255, 255, 255, .18), transparent), repeating-linear-gradient(45deg, #183b82 0 8px, #2551a6 8px 16px); }
+    .card .corner { position: absolute; top: 7px; left: 8px; display: grid; justify-items: center; font-size: 14px; line-height: .95; }
+    .card .big { font-size: clamp(26px, 3.4vw, 38px); }
+    .empty-card { display: grid; place-items: center; border: 1px dashed rgba(255, 255, 255, .22); color: rgba(255, 255, 255, .28); font-size: 12px; }
+    .winner { max-width: 100%; margin-top: 4px; padding: 9px 12px; border: 1px solid rgba(243, 197, 103, .26); border-radius: 14px; background: rgba(243, 197, 103, .13); color: var(--gold); font-weight: 800; text-align: center; }
+
+    .side-card { position: sticky; top: 14px; padding: 18px; }
+    .form, .actions, .room-tools, .fun-tools { display: grid; gap: 10px; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+    input, select { width: 100%; padding: 11px 12px; border: 1px solid rgba(255, 255, 255, .15); border-radius: 13px; outline: none; color: var(--ink); background: rgba(255, 255, 255, .08); font: inherit; }
+    input:focus, select:focus { border-color: rgba(243, 197, 103, .6); box-shadow: 0 0 0 4px rgba(243, 197, 103, .12); }
+    select:disabled { opacity: .7; cursor: not-allowed; }
+    button { padding: 11px 13px; border: 0; border-radius: 13px; cursor: pointer; color: #1c1507; background: linear-gradient(135deg, var(--gold), var(--gold-2)); box-shadow: 0 12px 24px rgba(200, 138, 45, .22); font: inherit; font-weight: 900; }
+    button.secondary { color: var(--ink); background: rgba(255, 255, 255, .09); border: 1px solid rgba(255, 255, 255, .12); box-shadow: none; }
+    button.danger { color: #fff; background: linear-gradient(135deg, #d8423c, #9b2420); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    .grid2, .raise-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .status { min-height: 58px; margin: 14px 0; padding: 14px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 16px; background: rgba(255, 255, 255, .07); font-weight: 800; line-height: 1.45; }
+    .status.small { min-height: auto; color: var(--muted); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+    .room-tools { margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .12); }
+    .hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .error { color: #ff958f; }
+
+    @media (max-width: 1040px) {
+      header { flex-direction: column; align-items: start; }
+      .layout { grid-template-columns: 1fr; }
+      .side-card { position: static; }
+    }
+    @media (max-width: 680px) {
+      .app { width: min(100% - 16px, 1280px); padding-top: 12px; }
+      .table-card { padding: 8px; border-radius: 20px; }
+      .table { min-width: 580px; min-height: 590px; border-width: 12px; }
+      .table::before { inset: 20px; }
+      .seat { width: 31%; }
+      .seat.opponent-left { left: 4%; }
+      .seat.opponent-right { right: 4%; }
+      .seat.bottom { width: 47%; bottom: 22px; }
+      .center { top: 49%; width: 54%; }
+      .grid2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1 id="title">二人德州扑克</h1>
+        <div class="subtitle" id="subtitle">娱乐局 · 非公平牌局 · 虚拟筹码 · 5/10 盲注 · 选定人数后邀请朋友同房间对战</div>
+      </div>
+      <div class="badge fun">娱乐局 · 非公平牌局</div>
+      <div class="badge" id="connection">未加入房间</div>
+    </header>
+
+    <section class="layout">
+      <div class="table-card">
+        <div class="table-scroll" aria-label="牌桌，可在高缩放时横向滚动查看">
+          <div class="table two-player" id="table">
+            <div class="seat opponent-left" id="seat1">
+              <div class="player-box" id="playerBox1"><div><div class="name" id="name1">等待玩家</div><div class="meta" id="meta1">玩家2</div></div><div class="amount" id="stack1">筹码 1000</div></div>
+              <div class="cards" id="hand1"></div>
+            </div>
+            <div class="seat opponent-right" id="seat2">
+              <div class="player-box" id="playerBox2"><div><div class="name" id="name2">等待玩家</div><div class="meta" id="meta2">玩家3</div></div><div class="amount" id="stack2">筹码 1000</div></div>
+              <div class="cards" id="hand2"></div>
+            </div>
+            <div class="center"><div class="pot"><span class="chip"></span><span id="pot">底池 0</span></div><div class="board" id="board"></div><div class="winner" id="winner" hidden></div></div>
+            <div class="seat bottom" id="seat0">
+              <div class="cards" id="hand0"></div>
+              <div class="player-box" id="playerBox0"><div><div class="name" id="name0">等待玩家</div><div class="meta" id="meta0">玩家1</div></div><div class="amount" id="stack0">筹码 1000</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side-card">
+        <div class="form">
+          <label>房间号<input id="roomInput" value="room1" maxlength="40" autocomplete="off" /></label>
+          <label>本局人数
+            <select id="playerCountInput"><option value="2">两人对战</option><option value="3">三人对战</option></select>
+          </label>
+          <p class="hint">第一个加入空房间的人决定人数；入座后人数锁定。邀请链接会自动带上这个设置。</p>
+          <label>你的昵称<input id="nameInput" value="玩家" maxlength="20" autocomplete="off" /></label>
+          <button id="joinBtn">加入 / 创建房间</button>
+          <div class="grid2"><button class="secondary" id="copyBtn" disabled>复制邀请链接</button><button class="secondary" id="leaveBtn" disabled>离开座位</button></div>
+        </div>
+
+        <div class="status" id="status">先选择两人或三人局，再输入房间号加入。凑满对应人数后自动发牌。</div>
+        <div class="status small" id="invite">邀请链接会在加入后显示。</div>
+
+        <div class="fun-tools">
+          <label>娱乐码<input id="funCodeInput" type="password" maxlength="30" autocomplete="off" placeholder="输入娱乐码" /></label>
+          <button class="secondary" id="funCodeBtn" disabled>应用娱乐码</button>
+          <p class="hint">本页面为娱乐局 / 非公平牌局；娱乐码仅用于朋友局整活。</p>
+        </div>
+
+        <div class="actions">
+          <button class="danger" id="foldBtn" disabled>弃牌</button>
+          <button id="checkCallBtn" disabled>过牌 / 跟注</button>
+          <div class="raise-row"><input id="raiseInput" type="number" min="10" step="5" value="20" /><button id="raiseBtn" disabled>加注</button></div>
+          <button class="secondary" id="allInBtn" disabled>全下</button>
+          <button id="nextHandBtn" disabled>下一手</button>
+        </div>
+
+        <div class="room-tools">
+          <button class="secondary" id="resetBtn" disabled>重置牌桌筹码</button>
+          <button class="danger" id="clearBtn">清空这个房间</button>
+          <button class="secondary" id="newIdentityBtn">换身份</button>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const roomInput = document.getElementById("roomInput");
+    const playerCountInput = document.getElementById("playerCountInput");
+    const nameInput = document.getElementById("nameInput");
+    const tableEl = document.getElementById("table");
+    const titleEl = document.getElementById("title");
+    const subtitleEl = document.getElementById("subtitle");
+    const joinBtn = document.getElementById("joinBtn");
+    const copyBtn = document.getElementById("copyBtn");
+    const leaveBtn = document.getElementById("leaveBtn");
+    const statusEl = document.getElementById("status");
+    const inviteEl = document.getElementById("invite");
+    const connectionEl = document.getElementById("connection");
+    const boardEl = document.getElementById("board");
+    const winnerEl = document.getElementById("winner");
+    const potEl = document.getElementById("pot");
+    const foldBtn = document.getElementById("foldBtn");
+    const checkCallBtn = document.getElementById("checkCallBtn");
+    const raiseInput = document.getElementById("raiseInput");
+    const raiseBtn = document.getElementById("raiseBtn");
+    const allInBtn = document.getElementById("allInBtn");
+    const nextHandBtn = document.getElementById("nextHandBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const newIdentityBtn = document.getElementById("newIdentityBtn");
+    const funCodeInput = document.getElementById("funCodeInput");
+    const funCodeBtn = document.getElementById("funCodeBtn");
+
+    let state = null;
+    let joined = false;
+    let currentRoom = "";
+    let pollTimer = null;
+    let eventSource = null;
+    let actionBusy = false;
+
+    function selectedCount() { return Number(playerCountInput.value) === 3 ? 3 : 2; }
+    function getPlayerId() { let id = localStorage.getItem("pokerPlayerId"); if (!id) { id = "p_" + crypto.randomUUID(); localStorage.setItem("pokerPlayerId", id); } return id; }
+    function roleText(role) { if (role === "seat0") return "玩家1"; if (role === "seat1") return "玩家2"; if (role === "seat2") return "玩家3"; if (role === "spectator") return "观战"; return "未加入"; }
+    function isPlayerRole(role) { return /^seat[0-2]$/.test(role || ""); }
+    function cleanRoom(room) { return (room || "room1").trim().replace(/[^\w\u4e00-\u9fa5-]/g, "").slice(0, 40) || "room1"; }
+    function roomFromHash() { const hash = new URLSearchParams(location.hash.replace(/^#/, "")); return { room: hash.get("room") || "", count: Number(hash.get("players")) === 3 ? 3 : 2 }; }
+    function setHashRoom(room, count) { const hash = new URLSearchParams(); hash.set("room", room); hash.set("players", String(count)); history.replaceState(null, "", "#" + hash.toString()); }
+    function inviteLink() { return `${location.origin}/#room=${encodeURIComponent(currentRoom)}&players=${state?.seatCount || selectedCount()}`; }
+
+    const tunnelHeaders = { "bypass-tunnel-reminder": "1" };
+    async function readJson(res) {
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error("接口被临时公网通道拦截了。请刷新页面，如果仍不行我再换一条链接。");
+      }
+    }
+    async function api(path, payload) { const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...tunnelHeaders }, body: JSON.stringify(payload) }); const data = await readJson(res); if (!res.ok) throw new Error(data.error || "请求失败"); return data; }
+    async function joinRoom() {
+      const room = cleanRoom(roomInput.value);
+      try {
+        state = await api("/api/join", { room, name: nameInput.value, playerId: getPlayerId(), playerCount: selectedCount() });
+        currentRoom = room;
+        playerCountInput.value = String(state.seatCount);
+        playerCountInput.disabled = true;
+        setHashRoom(room, state.seatCount);
+        joined = true;
+        copyBtn.disabled = false;
+        startLiveUpdates();
+        render();
+      } catch (err) { showError(err.message); }
+    }
+    function stopLiveUpdates() { clearInterval(pollTimer); pollTimer = null; if (eventSource) { eventSource.close(); eventSource = null; } }
+    function startPolling() { clearInterval(pollTimer); pollTimer = setInterval(fetchState, 2500); }
+    function startLiveUpdates() {
+      stopLiveUpdates();
+      if (!window.EventSource) { startPolling(); return; }
+      const url = `/api/events?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`;
+      eventSource = new EventSource(url);
+      eventSource.addEventListener("state", event => {
+        try { state = JSON.parse(event.data); render(); }
+        catch { startPolling(); }
+      });
+      eventSource.onerror = () => {
+        connectionEl.textContent = "实时连接恢复中，已临时降级刷新…";
+        if (!pollTimer) startPolling();
+      };
+    }
+    async function fetchState() { if (!joined || !currentRoom) return; try { const res = await fetch(`/api/state?room=${encodeURIComponent(currentRoom)}&playerId=${encodeURIComponent(getPlayerId())}`, { cache: "no-store", headers: tunnelHeaders }); state = await readJson(res); render(); } catch { connectionEl.textContent = "连接中断，重试中…"; } }
+    function markActionBusy(busy) { [foldBtn, checkCallBtn, raiseBtn, allInBtn, nextHandBtn].forEach(btn => btn.disabled = busy || btn.disabled); }
+    async function doAction(action, amount = null) { if (!joined) return showError("请先加入房间。"); if (actionBusy) return; actionBusy = true; markActionBusy(true); statusEl.textContent = "操作已发送，等待确认…"; let error = null; try { state = await api("/api/action", { room: currentRoom, playerId: getPlayerId(), action, amount }); } catch (err) { error = err; } finally { actionBusy = false; render(); if (error) showError(error.message); } }
+    async function applyFunCode() {
+      if (!joined) return showError("请先加入房间。");
+      const code = funCodeInput.value.trim();
+      if (!code) return showError("请输入娱乐码。");
+      funCodeBtn.disabled = true;
+      try {
+        state = await api("/api/fun-code", { room: currentRoom, playerId: getPlayerId(), code });
+        funCodeInput.value = "";
+        render();
+        statusEl.textContent = "娱乐码已应用，娱乐局继续。";
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        funCodeBtn.disabled = !state || !isPlayerRole(state.you) || !["preflop", "flop", "turn", "river"].includes(state.phase);
+      }
+    }
+    async function nextHand() { try { state = await api("/api/next-hand", { room: currentRoom, playerId: getPlayerId() }); render(); } catch (err) { showError(err.message); } }
+    async function resetTable() { if (!confirm("确定重置本房间所有人的筹码并重新开局吗？")) return; try { state = await api("/api/reset-table", { room: currentRoom, playerId: getPlayerId() }); render(); } catch (err) { showError(err.message); } }
+    async function clearRoom() { const room = cleanRoom(roomInput.value); if (!confirm(`确定清空房间 ${room} 吗？这会移除所有座位和本局。`)) return; try { state = await api("/api/clear-room", { room }); currentRoom = room; joined = false; stopLiveUpdates(); playerCountInput.disabled = false; statusEl.textContent = "房间已清空。现在可以重新选择两人或三人局并加入。"; render(); } catch (err) { showError(err.message); } }
+    async function leaveSeat() { try { state = await api("/api/leave", { room: currentRoom, playerId: getPlayerId() }); joined = false; stopLiveUpdates(); playerCountInput.disabled = false; statusEl.textContent = "你已离开座位。"; render(); } catch (err) { showError(err.message); } }
+    function showError(message) { statusEl.innerHTML = `<span class="error">${escapeHtml(message)}</span>`; }
+    function escapeHtml(text) { return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+
+    function setSeatCount(count) {
+      const safeCount = count === 3 ? 3 : 2;
+      tableEl.classList.toggle("two-player", safeCount === 2);
+      for (let seat = 0; seat < 3; seat++) document.getElementById(`seat${seat}`).hidden = seat >= safeCount;
+      titleEl.textContent = `${safeCount === 2 ? "二人" : "三人"}德州扑克`;
+      subtitleEl.textContent = `娱乐局 · 非公平牌局 · 虚拟筹码 · 5/10 盲注 · ${safeCount} 人凑齐后自动发牌`;
+    }
+    function render() {
+      if (!state) return renderEmpty();
+      const count = state.seatCount === 3 ? 3 : 2;
+      setSeatCount(count);
+      const isPlayer = isPlayerRole(state.you);
+      connectionEl.textContent = `房间：${state.room} · ${roleText(state.you)}`;
+      potEl.textContent = `底池 ${state.totalPot}`;
+      statusEl.textContent = state.message;
+      inviteEl.textContent = currentRoom ? inviteLink() : "邀请链接会在加入后显示。";
+      for (let seat = 0; seat < count; seat++) {
+        const player = state.players[seat];
+        document.getElementById(`name${seat}`).textContent = player?.name || "等待玩家";
+        const tags = [`玩家${seat + 1}`];
+        if (state.dealer === seat) tags.push("按钮");
+        if (state.smallBlind === seat) tags.push("小盲");
+        if (state.bigBlind === seat) tags.push("大盲");
+        if (state.allIn?.[seat]) tags.push("全下");
+        if (state.folded?.[seat]) tags.push("已弃牌");
+        document.getElementById(`meta${seat}`).textContent = tags.join(" · ");
+        const betText = state.bets?.[seat] ? `｜本轮 ${state.bets[seat]}` : "";
+        document.getElementById(`stack${seat}`).textContent = `筹码 ${state.stacks?.[seat] ?? 1000}${betText}`;
+        document.getElementById(`playerBox${seat}`).classList.toggle("turn", state.turn === seat);
+        renderCards(document.getElementById(`hand${seat}`), state.hands?.[seat] || [], 2);
+      }
+      renderCards(boardEl, state.board || [], 5, true);
+      if (state.winnerSummary?.length) { winnerEl.hidden = false; winnerEl.textContent = state.winnerSummary.map(item => `${item.name} 赢 ${item.amount}（${item.handName}）`).join("；"); } else winnerEl.hidden = true;
+      const legal = state.legal || {};
+      foldBtn.disabled = !legal.canFold;
+      checkCallBtn.disabled = !legal.canCheckCall;
+      checkCallBtn.textContent = legal.toCall > 0 ? `跟注 ${legal.toCall}` : "过牌";
+      raiseBtn.disabled = !legal.canRaise;
+      allInBtn.disabled = !legal.canAllIn;
+      nextHandBtn.disabled = state.phase !== "hand_over" || !isPlayer;
+      leaveBtn.disabled = !isPlayer;
+      resetBtn.disabled = !isPlayer;
+      funCodeBtn.disabled = !isPlayer || !["preflop", "flop", "turn", "river"].includes(state.phase);
+      if (legal.minRaise) { raiseInput.min = legal.minRaise; if (Number(raiseInput.value) < legal.minRaise) raiseInput.value = legal.minRaise; }
+      if (actionBusy) markActionBusy(true);
+    }
+    function renderEmpty() {
+      const count = selectedCount();
+      setSeatCount(count);
+      potEl.textContent = "底池 0";
+      for (let seat = 0; seat < count; seat++) { document.getElementById(`name${seat}`).textContent = "等待玩家"; document.getElementById(`meta${seat}`).textContent = `玩家${seat + 1}`; document.getElementById(`stack${seat}`).textContent = "筹码 1000"; document.getElementById(`playerBox${seat}`).classList.remove("turn"); renderCards(document.getElementById(`hand${seat}`), [], 2); }
+      renderCards(boardEl, [], 5, true); winnerEl.hidden = true;
+      foldBtn.disabled = true; checkCallBtn.disabled = true; raiseBtn.disabled = true; allInBtn.disabled = true; nextHandBtn.disabled = true; leaveBtn.disabled = true; resetBtn.disabled = true;
+      funCodeBtn.disabled = true;
+    }
+    function renderCards(container, cards, total = cards.length, board = false) { container.innerHTML = ""; const filled = cards || []; for (let index = 0; index < total; index++) { const card = filled[index]; if (card === null) container.appendChild(hiddenCard()); else if (card) container.appendChild(cardEl(card)); else { const empty = document.createElement("div"); empty.className = "empty-card"; empty.textContent = board ? "公共牌" : "空"; container.appendChild(empty); } } }
+    function hiddenCard() { const div = document.createElement("div"); div.className = "card hidden"; div.textContent = "?"; return div; }
+    function cardEl(card) { const div = document.createElement("div"); div.className = `card ${card.color === "red" ? "red" : ""}`; div.innerHTML = `<div class="corner"><span>${card.rank}</span><span>${card.suit}</span></div><div class="big">${card.suit}</div>`; return div; }
+
+    joinBtn.addEventListener("click", joinRoom);
+    playerCountInput.addEventListener("change", () => { if (!joined) renderEmpty(); });
+    foldBtn.addEventListener("click", () => doAction("fold"));
+    checkCallBtn.addEventListener("click", () => doAction("check_call"));
+    raiseBtn.addEventListener("click", () => doAction("raise", Number(raiseInput.value || 0)));
+    allInBtn.addEventListener("click", () => doAction("all_in"));
+    funCodeBtn.addEventListener("click", applyFunCode);
+    funCodeInput.addEventListener("keydown", event => { if (event.key === "Enter") applyFunCode(); });
+    nextHandBtn.addEventListener("click", nextHand);
+    resetBtn.addEventListener("click", resetTable);
+    clearBtn.addEventListener("click", clearRoom);
+    leaveBtn.addEventListener("click", leaveSeat);
+    copyBtn.addEventListener("click", async () => { try { await navigator.clipboard.writeText(inviteLink()); inviteEl.textContent = "已复制：" + inviteLink(); } catch { inviteEl.textContent = "复制失败，请手动复制：" + inviteLink(); } });
+    newIdentityBtn.addEventListener("click", () => { localStorage.removeItem("pokerPlayerId"); joined = false; stopLiveUpdates(); state = null; playerCountInput.disabled = false; connectionEl.textContent = "已换身份"; statusEl.textContent = "身份已切换，请重新加入房间。"; render(); });
+
+    const initial = roomFromHash();
+    if (initial.room) roomInput.value = initial.room;
+    playerCountInput.value = String(initial.count);
+    render();
+  </script>
+</body>
+</html>
